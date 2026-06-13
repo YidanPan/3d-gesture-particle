@@ -1,0 +1,910 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dan's 3D Gesture Particle System</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      overflow: hidden;
+      background: #050510;
+      font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      user-select: none; -webkit-user-select: none;
+    }
+    canvas { display: block; position: fixed; top: 0; left: 0; z-index: 1; }
+
+    /* HUD - bottom left */
+    #hud {
+      position: fixed; bottom: 30px; left: 30px;
+      z-index: 10; pointer-events: none;
+    }
+    #gesture-name {
+      font-size: 28px; font-weight: 700; color: #fff;
+      letter-spacing: 0.04em;
+      text-shadow: 0 0 20px rgba(108,156,255,0.6);
+    }
+    #gesture-detail {
+      font-size: 13px; color: rgba(255,255,255,0.5);
+      margin-top: 4px; letter-spacing: 0.03em;
+    }
+
+    /* Status bar - top right */
+    #status-bar {
+      position: fixed; top: 20px; right: 24px;
+      z-index: 10; pointer-events: none;
+      display: flex; gap: 8px; align-items: center;
+    }
+    .status-dot {
+      width: 9px; height: 9px; border-radius: 50%;
+      background: #ff4757;
+      transition: all 0.4s ease;
+    }
+    .status-dot.active {
+      background: #2ed573;
+      box-shadow: 0 0 10px rgba(46,213,115,0.6);
+    }
+
+    /* Show regardless */
+    #debug-info {
+      position: fixed; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      color: #fff; font-size: 18px; z-index: 999;
+      text-align: center; pointer-events: none;
+    }
+
+    /* Mode toggle */
+    #mode-toggle {
+      position: fixed; bottom: 30px; right: 30px;
+      z-index: 10;
+    }
+    #mode-btn {
+      padding: 10px 24px; border-radius: 22px;
+      border: 1px solid rgba(255,255,255,0.35);
+      background: rgba(255,255,255,0.1);
+      color: #fff; font-size: 14px; cursor: pointer;
+      transition: all 0.2s;
+      letter-spacing: 0.03em;
+      backdrop-filter: blur(6px);
+    }
+    #mode-btn:hover {
+      background: rgba(255,255,255,0.2);
+      border-color: rgba(255,255,255,0.6);
+    }
+    #mode-btn.active {
+      background: rgba(108,156,255,0.25);
+      border-color: rgba(108,156,255,0.55);
+    }
+
+    /* Help */
+    #help {
+      position: fixed; top: 20px; left: 24px;
+      z-index: 10;
+    }
+    #help-btn {
+      pointer-events: auto;
+      width: 36px; height: 36px; border-radius: 50%;
+      border: 1px solid rgba(255,255,255,0.25);
+      background: rgba(255,255,255,0.06);
+      color: rgba(255,255,255,0.7); font-size: 18px;
+      cursor: pointer; transition: all 0.2s;
+      display: flex; align-items: center; justify-content: center;
+    }
+    #help-btn:hover {
+      background: rgba(255,255,255,0.14);
+      border-color: rgba(255,255,255,0.45);
+    }
+    #help-panel {
+      display: none;
+      margin-top: 8px;
+      background: rgba(0,0,0,0.85);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 10px;
+      padding: 16px 20px;
+      color: rgba(255,255,255,0.8);
+      font-size: 13px; line-height: 1.9;
+      backdrop-filter: blur(10px);
+      min-width: 260px;
+    }
+    #help-panel.show { display: block; }
+    #help-panel b { color: #6c9cff; }
+    #help-panel hr { border-color: rgba(255,255,255,0.1); margin: 6px 0; }
+  </style>
+</head>
+<body>
+
+  <!-- Debug (shown if Three.js fails) -->
+  <div id="debug-info"></div>
+
+  <!-- HUD -->
+  <div id="hud">
+    <div id="gesture-name">🎨 初始化中…</div>
+    <div id="gesture-detail"></div>
+  </div>
+
+  <!-- Status -->
+  <div id="status-bar">
+    <span id="status-text">加载中</span>
+    <div class="status-dot" id="status-dot"></div>
+  </div>
+
+  <!-- Help -->
+  <div id="help">
+    <button id="help-btn" title="操作说明">?</button>
+    <div id="help-panel">
+      <b>🖱 鼠标模式</b>（默认）<br>
+      移动鼠标 → 粒子跟随<br>
+      左键按住 → ✋ 扩散<br>
+      右键按住 → ✊ 收缩<br>
+      滚轮 → 深度<br>
+      <hr>
+      <b>⌨ 键盘</b><br>
+      方向键 → 移动 · A → 张开<br>
+      F → 握拳 · 1→鼠标 2→手势<br>
+      <hr>
+      <b>📷 手势模式</b><br>
+      点击右下角按钮切换<br>
+      张开手掌 → 膨胀<br>
+      握拳 → 收缩<br>
+      指向 → 方向流动<br>
+      捏合 → 环状涡旋<br>
+      手掌旋转 → 粒子旋转
+    </div>
+  </div>
+
+  <!-- Mode toggle -->
+  <div id="mode-toggle">
+    <button id="mode-btn" class="active">🖱 鼠标模式</button>
+  </div>
+
+  <video id="input-video" style="display:none;" playsinline></video>
+
+  <!-- ============ Three.js ============ -->
+  <!-- Primary: bootcdn (国内可访问) -->
+  <script src="https://cdn.bootcdn.net/ajax/libs/three.js/0.160.0/three.min.js"></script>
+
+  <!-- Fallback: unpkg -->
+  <script>
+    if (typeof THREE === 'undefined') {
+      document.write('<script src="https://unpkg.com/three@0.160.0/build/three.min.js"><\/script>');
+    }
+  </script>
+
+  <script>
+    // Wait for THREE to be available
+    function waitForThree(cb, attempt) {
+      attempt = attempt || 0;
+      if (typeof THREE !== 'undefined') {
+        cb();
+        return;
+      }
+      if (attempt > 50) {
+        document.getElementById('debug-info').innerHTML =
+          '<div style="color:#ff6b6b;">⚠️ 无法加载 3D 引擎</div>' +
+          '<div style="font-size:13px;color:#999;margin-top:8px;">请检查网络连接后刷新页面</div>';
+        return;
+      }
+      setTimeout(function() { waitForThree(cb, attempt + 1); }, 200);
+    }
+
+    waitForThree(function() {
+      // Clear debug
+      document.getElementById('debug-info').innerHTML = '';
+
+      var PARTICLE_COUNT = 3000;
+      var mode = 'mouse';
+      var cameraReady = false;
+      var cameraLoading = false;
+      var latestHandResults = null;
+      var smoothedGesture = null;
+      var mouseState = { x: 0, y: 0, wheel: 0, leftDown: false, rightDown: false };
+      var time = 0;
+
+      // ── DOM refs ──────────────────────────
+      var gestureNameEl  = document.getElementById('gesture-name');
+      var gestureDetailEl = document.getElementById('gesture-detail');
+      var statusDotEl    = document.getElementById('status-dot');
+      var statusTextEl   = document.getElementById('status-text');
+      var modeBtn        = document.getElementById('mode-btn');
+      var helpBtn        = document.getElementById('help-btn');
+      var helpPanel      = document.getElementById('help-panel');
+      var videoEl        = document.getElementById('input-video');
+
+      // ── Math helpers ──────────────────────
+      var clamp = function(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); };
+      var lerp  = function(a, b, t) { return a + (b - a) * t; };
+      var dist3 = function(a, b) {
+        return Math.sqrt((a.x-b.x)*(a.x-b.x) + (a.y-b.y)*(a.y-b.y) + (a.z-b.z)*(a.z-b.z));
+      };
+      var norm3 = function(v) {
+        var len = Math.sqrt(v.x*v.x + v.y*v.y + v.z*v.z) || 1;
+        return { x: v.x/len, y: v.y/len, z: v.z/len };
+      };
+
+      // ── Three.js setup ───────────────────
+      var renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setClearColor(0x050510);
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      document.body.appendChild(renderer.domElement);
+
+      var scene = new THREE.Scene();
+      var camera3d = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.3, 60);
+      camera3d.position.set(0, 0, 7);
+      camera3d.lookAt(0, 0, 0);
+
+      // ── Starfield ────────────────────────
+      (function() {
+        var n = 1000;
+        var pos = new Float32Array(n * 3);
+        for (var i = 0; i < n; i++) {
+          pos[i*3]   = (Math.random() - 0.5) * 35;
+          pos[i*3+1] = (Math.random() - 0.5) * 22;
+          pos[i*3+2] = (Math.random() - 0.5) * 18 - 4;
+        }
+        var geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+        var mat = new THREE.PointsMaterial({
+          color: 0x8899cc, size: 0.02, transparent: true, opacity: 0.5,
+          blending: THREE.AdditiveBlending, depthWrite: false,
+        });
+        scene.add(new THREE.Points(geo, mat));
+      })();
+
+      // ── Particle system ──────────────────
+      var basePositions = new Float32Array(PARTICLE_COUNT * 3);
+      var curPositions  = new Float32Array(PARTICLE_COUNT * 3);
+      var curColors     = new Float32Array(PARTICLE_COUNT * 3);
+      var curSizes      = new Float32Array(PARTICLE_COUNT);
+
+      for (var i = 0; i < PARTICLE_COUNT; i++) {
+        var x, y, z;
+        do {
+          x = (Math.random() - 0.5) * 2;
+          y = (Math.random() - 0.5) * 2;
+          z = (Math.random() - 0.5) * 2;
+        } while (x*x + y*y + z*z > 1);
+        basePositions[i*3]   = x;
+        basePositions[i*3+1] = y;
+        basePositions[i*3+2] = z;
+        curPositions[i*3]    = x * 1.5;
+        curPositions[i*3+1]  = y * 1.5;
+        curPositions[i*3+2]  = z * 1.5;
+        curColors[i*3]   = 0.35;
+        curColors[i*3+1] = 0.55;
+        curColors[i*3+2] = 0.95;
+        curSizes[i] = 0.02 + Math.random() * 0.05;
+      }
+
+      var particleGeo = new THREE.BufferGeometry();
+      particleGeo.setAttribute('position', new THREE.BufferAttribute(curPositions, 3));
+      particleGeo.setAttribute('color',    new THREE.BufferAttribute(curColors, 3));
+
+      // Glow texture via canvas
+      function makeGlowTex(size, inner, outer) {
+        var c = document.createElement('canvas');
+        c.width = c.height = size;
+        var ctx = c.getContext('2d');
+        var g = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+        g.addColorStop(0, inner);
+        g.addColorStop(0.12, inner);
+        g.addColorStop(0.45, outer);
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, size, size);
+        return new THREE.CanvasTexture(c);
+      }
+      var glowTex = makeGlowTex(128, 'rgba(255,255,255,1)', 'rgba(50,90,220,0.35)');
+
+      var particleMat = new THREE.PointsMaterial({
+        size: 0.14,
+        map: glowTex,
+        vertexColors: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        depthTest: true,
+        transparent: true,
+      });
+      var particles = new THREE.Points(particleGeo, particleMat);
+      scene.add(particles);
+
+      console.log('✅ 粒子系统就绪: ' + PARTICLE_COUNT + ' particles');
+
+      // ── Gesture ──────────────────────────
+      function createDefaultGesture() {
+        return {
+          handPosition:  { x: 0, y: 0, z: 0 },
+          handNormal:    { x: 0, y: 0, z: 1 },
+          pointingDir:   { x: 0, y: 0, z: -1 },
+          openness: 0.3, pinchDist: 1,
+          isOpenPalm: false, isFist: false,
+          isPointing: false, isPinch: false,
+          extCount: 2, handCount: 0, secondHandPos: null,
+        };
+      }
+
+      function getMouseGesture() {
+        var g = createDefaultGesture();
+        g.handPosition = {
+          x: mouseState.x * 5,
+          y: -mouseState.y * 3.5,
+          z: mouseState.wheel * 3,
+        };
+        g.handCount = 1;
+        if (mouseState.leftDown)  { g.isOpenPalm = true; g.openness = 0.85; }
+        if (mouseState.rightDown) { g.isFist = true; g.openness = 0.08; }
+        g.handNormal  = norm3({ x: mouseState.y*0.6, y: -mouseState.x*0.6, z: 1 });
+        g.pointingDir = norm3({ x: mouseState.x, y: -mouseState.y, z: -1 });
+        return g;
+      }
+
+      // ── Hand landmarks ──────────────────
+      var WRIST=0, THUMB_TIP=4, INDEX_TIP=8, MIDDLE_TIP=12, RING_TIP=16, PINKY_TIP=20;
+      var THUMB_MCP=2, INDEX_MCP=5, MIDDLE_MCP=9, RING_MCP=13, PINKY_MCP=17;
+      var INDEX_PIP=6, MIDDLE_PIP=10, RING_PIP=14, PINKY_PIP=18;
+
+      function fingerExtended(lm, mcp, pip, tip) {
+        // Compare tip-to-WRIST vs pip-to-WRIST distance
+        // Extended: tip is further from wrist than pip is
+        // Curled: tip is closer to wrist
+        var tipToWrist = dist3(lm[tip], lm[WRIST]);
+        var pipToWrist = dist3(lm[pip], lm[WRIST]);
+        return tipToWrist > pipToWrist * 1.05;
+      }
+
+      function detectFromLandmarks(lm) {
+        if (!lm || lm.length < 21) return null;
+        var ie = fingerExtended(lm, INDEX_MCP, INDEX_PIP, INDEX_TIP);
+        var me = fingerExtended(lm, MIDDLE_MCP, MIDDLE_PIP, MIDDLE_TIP);
+        var re = fingerExtended(lm, RING_MCP, RING_PIP, RING_TIP);
+        var pe = fingerExtended(lm, PINKY_MCP, PINKY_PIP, PINKY_TIP);
+        var te = dist3(lm[THUMB_TIP], lm[WRIST]) > dist3(lm[THUMB_MCP], lm[WRIST]) * 1.15;
+        var extCount = [ie,me,re,pe].filter(function(v){return v;}).length;
+        var totalFingers = extCount + (te ? 1 : 0); // Include thumb
+        var pinchDist = dist3(lm[THUMB_TIP], lm[INDEX_TIP]);
+
+        // Scale hand position mapping (mirror X since camera is mirrored)
+        var wx = (0.5 - lm[WRIST].x) * 12;
+        var wy = (0.5 - lm[WRIST].y) * 8;
+        var wz = lm[WRIST].z * 8;
+
+        var v1 = { x: lm[INDEX_MCP].x-lm[WRIST].x, y: lm[INDEX_MCP].y-lm[WRIST].y, z: lm[INDEX_MCP].z-lm[WRIST].z };
+        var v2 = { x: lm[PINKY_MCP].x-lm[WRIST].x, y: lm[PINKY_MCP].y-lm[WRIST].y, z: lm[PINKY_MCP].z-lm[WRIST].z };
+        var hn = norm3({ x: v1.y*v2.z - v1.z*v2.y, y: v1.z*v2.x - v1.x*v2.z, z: v1.x*v2.y - v1.y*v2.x });
+        var pDir = norm3({ x: lm[WRIST].x-lm[INDEX_TIP].x, y: lm[INDEX_TIP].y-lm[WRIST].y, z: lm[INDEX_TIP].z-lm[WRIST].z });
+
+        // Openness: avg fingertip distance to wrist, normalized by hand size
+        var tips = [INDEX_TIP, MIDDLE_TIP, RING_TIP, PINKY_TIP];
+        var avgDist = 0;
+        tips.forEach(function(t) { avgDist += dist3(lm[t], lm[WRIST]); });
+        avgDist /= 4;
+        var handSize = dist3(lm[MIDDLE_MCP], lm[WRIST]) || 0.05;
+        var openness = clamp((avgDist / handSize - 1.3) / 1.8, 0, 1);
+
+        return {
+          handPosition: { x: wx, y: wy, z: wz },
+          handNormal: hn, pointingDir: pDir,
+          openness: openness, pinchDist: pinchDist,
+          isOpenPalm: totalFingers >= 3 && openness > 0.3,
+          isFist: totalFingers <= 1 && openness < 0.2,
+          isPointing: ie && !me && totalFingers <= 2,
+          isPinch: pinchDist < 0.08,
+          extCount: totalFingers,
+        };
+      }
+
+      // ── Smoothing ────────────────────────
+      function smoothGesture(prev, raw, dt) {
+        var alpha = clamp(1 - Math.exp(-dt * 12), 0.08, 0.6);
+        if (!prev && !raw) return createDefaultGesture();
+        if (!prev) {
+          var r = {};
+          for (var k in raw) r[k] = raw[k];
+          r.handCount = raw ? 1 : 0;
+          r.secondHandPos = null;
+          return r;
+        }
+        if (!raw) {
+          return {
+            handPosition:  { x: lerp(prev.handPosition.x,0,alpha*0.3), y: lerp(prev.handPosition.y,0,alpha*0.3), z: lerp(prev.handPosition.z,0,alpha*0.3) },
+            handNormal:    { x: lerp(prev.handNormal.x,0,alpha*0.3), y: lerp(prev.handNormal.y,0,alpha*0.3), z: lerp(prev.handNormal.z,1,alpha*0.3) },
+            pointingDir:   prev.pointingDir,
+            openness: lerp(prev.openness, 0.3, alpha*0.3),
+            pinchDist: prev.pinchDist,
+            isOpenPalm: false, isFist: false, isPointing: false, isPinch: false,
+            extCount: prev.extCount, handCount: 0, secondHandPos: null,
+          };
+        }
+        return {
+          handPosition:  { x: lerp(prev.handPosition.x,raw.handPosition.x,alpha), y: lerp(prev.handPosition.y,raw.handPosition.y,alpha), z: lerp(prev.handPosition.z,raw.handPosition.z,alpha) },
+          handNormal:    { x: lerp(prev.handNormal.x,raw.handNormal.x,alpha), y: lerp(prev.handNormal.y,raw.handNormal.y,alpha), z: lerp(prev.handNormal.z,raw.handNormal.z,alpha) },
+          pointingDir:   { x: lerp(prev.pointingDir.x,raw.pointingDir.x,alpha), y: lerp(prev.pointingDir.y,raw.pointingDir.y,alpha), z: lerp(prev.pointingDir.z,raw.pointingDir.z,alpha) },
+          openness: lerp(prev.openness, raw.openness, alpha),
+          pinchDist: lerp(prev.pinchDist, raw.pinchDist, alpha),
+          isOpenPalm: raw.isOpenPalm, isFist: raw.isFist,
+          isPointing: raw.isPointing, isPinch: raw.isPinch,
+          extCount: raw.extCount, handCount: 1,
+          secondHandPos: raw.secondHandPos || null,
+        };
+      }
+
+      // ── Transform ────────────────────────
+      function computeTarget(bx, by, bz, g, t) {
+        var scale = 1.5;
+        if (g.handCount > 0) {
+          if (g.isOpenPalm)       scale = 1.5 + g.openness * 3.0;
+          else if (g.isFist)      scale = 0.35 + g.openness * 0.5;
+          else if (g.isPinch)     scale = 0.8 + (1 - g.pinchDist) * 1.5;
+          else if (g.isPointing)  scale = 1.2;
+          else                    scale = 1.5 + g.openness * 1.0;
+        } else {
+          scale = 1.5 + Math.sin(t * 0.8) * 0.35;
+        }
+
+        var x = bx * scale, y = by * scale, z = bz * scale;
+
+        // Stream (pointing)
+        var sx = 0, sy = 0, sz = 0;
+        if (g.isPointing && g.handCount > 0) {
+          var p = g.pointingDir;
+          var proj = x*p.x + y*p.y + z*p.z;
+          var str = clamp(proj * 1.5, -3, 5);
+          sx = p.x * str; sy = p.y * str; sz = p.z * str;
+        }
+
+        // Pinch → ring
+        if (g.isPinch && g.handCount > 0) {
+          var ps = clamp((1 - g.pinchDist) / 0.05, 0, 1);
+          var rad = Math.sqrt(x*x + z*z) || 0.01;
+          var tr = scale * (0.8 + ps * 1.2);
+          var ang = Math.atan2(z, x);
+          x = Math.cos(ang) * tr;
+          z = Math.sin(ang) * tr;
+          y *= (1 - ps * 0.6);
+        }
+
+        // Rotation
+        if (g.handCount > 0) {
+          var hn = g.handNormal;
+          var defN = { x: 0, y: 0, z: 1 };
+          var dot = hn.x*defN.x + hn.y*defN.y + hn.z*defN.z;
+          var cx = hn.y*defN.z - hn.z*defN.y;
+          var cy = hn.z*defN.x - hn.x*defN.z;
+          var cz = hn.x*defN.y - hn.y*defN.x;
+          var cl = Math.sqrt(cx*cx+cy*cy+cz*cz);
+          if (cl > 0.001) {
+            var ang = Math.acos(clamp(dot, -1, 1));
+            var ux=cx/cl, uy=cy/cl, uz=cz/cl;
+            var ca=Math.cos(ang), sa=Math.sin(ang);
+            var rx = x*ca + (uy*z - uz*y)*sa + ux*(ux*x + uy*y + uz*z)*(1-ca);
+            var ry = y*ca + (uz*x - ux*z)*sa + uy*(ux*x + uy*y + uz*z)*(1-ca);
+            var rz = z*ca + (ux*y - uy*x)*sa + uz*(ux*x + uy*y + uz*z)*(1-ca);
+            x=rx; y=ry; z=rz;
+          }
+        } else {
+          var ang = t * 0.3;
+          var ca=Math.cos(ang), sa=Math.sin(ang);
+          var rx = x*ca - z*sa;
+          var rz = x*sa + z*ca;
+          x=rx; z=rz;
+        }
+
+        // Translation
+        var tx = g.handPosition.x;
+        var ty = g.handPosition.y;
+        var tz = g.handPosition.z;
+
+        if (g.secondHandPos) {
+          var sh = g.secondHandPos;
+          tx = (tx + sh.x) * 0.5;
+          ty = (ty + sh.y) * 0.5;
+          tz = (tz + sh.z) * 0.5;
+          var spread = dist3(g.handPosition, sh);
+          var es = 1 + spread * 0.3;
+          x *= es; y *= es; z *= es;
+        }
+
+        return { x: x+sx+tx, y: y+sy+ty, z: z+sz+tz };
+      }
+
+      // ── Update particles ────────────────
+      function updateParticles(g, dt, t) {
+        var pa = particleGeo.attributes.position.array;
+        var ca = particleGeo.attributes.color.array;
+        var cdt = Math.min(dt, 0.1);
+        var lf = clamp(1 - Math.exp(-cdt * 10), 0.05, 0.4);
+
+        for (var i = 0; i < PARTICLE_COUNT; i++) {
+          var target = computeTarget(basePositions[i*3], basePositions[i*3+1], basePositions[i*3+2], g, t);
+
+          var noise = 0.012 * Math.sin(t*3 + i*0.07);
+          var tx = target.x + noise * Math.sin(i*0.7 + t*2) * 0.5;
+          var ty = target.y + noise * Math.cos(i*0.6 + t*2.3) * 0.5;
+          var tz = target.z + noise * Math.sin(i*0.8 + t*1.7) * 0.5;
+
+          var cx = lerp(pa[i*3],   tx, lf);
+          var cy = lerp(pa[i*3+1], ty, lf);
+          var cz = lerp(pa[i*3+2], tz, lf);
+
+          var speed = Math.sqrt((cx-pa[i*3])*(cx-pa[i*3]) + (cy-pa[i*3+1])*(cy-pa[i*3+1]) + (cz-pa[i*3+2])*(cz-pa[i*3+2])) / cdt;
+          pa[i*3]=cx; pa[i*3+1]=cy; pa[i*3+2]=cz;
+
+          var s = clamp(speed / 2.5, 0, 1);
+          ca[i*3]   = lerp(0.2, 1.0, s);
+          ca[i*3+1] = lerp(0.45, 1.0, s);
+          ca[i*3+2] = lerp(0.9, 0.65, s);
+        }
+        particleGeo.attributes.position.needsUpdate = true;
+        particleGeo.attributes.color.needsUpdate = true;
+      }
+
+      // ── HUD ─────────────────────────────
+      var debugFrameCount = 0;
+      var debugResultCount = 0;
+
+      function updateHUD(g) {
+        // Don't overwrite error messages
+        if (cameraErrorMsg) return;
+        if (cameraLoading) return;
+
+        if (mode === 'mouse') {
+          gestureNameEl.textContent = '🖱 鼠标模式';
+          gestureDetailEl.textContent =
+            '移动鼠标=位置 | 左键=张开 | 右键=握拳 | 滚轮=深度 | 按2切换手势';
+          return;
+        }
+        if (g.handCount === 0) {
+          gestureNameEl.textContent = '👋 等待手势…';
+          gestureDetailEl.textContent = '帧:' + debugFrameCount + ' 检测:' + debugResultCount +
+            ' | 将手靠近摄像头 · 确保光线充足';
+          return;
+        }
+        var parts = [];
+        if (g.isOpenPalm) parts.push('✋ 张开手掌');
+        else if (g.isFist) parts.push('✊ 握拳');
+        else if (g.isPointing) parts.push('☝️ 指向');
+        else if (g.isPinch) parts.push('🤏 捏合');
+        else parts.push('🖐 自然手势');
+        if (g.handCount >= 2) parts.push('🙌 双手');
+        gestureNameEl.textContent = parts.join(' · ');
+        var p = g.handPosition;
+        gestureDetailEl.textContent =
+          '位置('+p.x.toFixed(1)+','+p.y.toFixed(1)+','+p.z.toFixed(1)+') · ' +
+          '开合'+(g.openness*100).toFixed(0)+'% · 手指'+g.extCount+'/5';
+      }
+
+      function updateStatus() {
+        if (mode === 'camera') {
+          if (cameraReady) { statusDotEl.className = 'status-dot active'; statusTextEl.textContent = '摄像头'; }
+          else if (cameraLoading) { statusDotEl.className = 'status-dot'; statusTextEl.textContent = '加载中'; }
+          else { statusDotEl.className = 'status-dot'; statusTextEl.textContent = '未连接'; }
+        } else {
+          statusDotEl.className = 'status-dot active'; statusTextEl.textContent = '鼠标';
+        }
+      }
+
+      function processHandResults(results) {
+        if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+          var raw = detectFromLandmarks(results.multiHandLandmarks[0]);
+          if (raw) {
+            if (results.multiHandLandmarks.length >= 2) {
+              var lm2 = results.multiHandLandmarks[1];
+              raw.handCount = 2;
+              raw.secondHandPos = {
+                x: (0.5 - lm2[WRIST].x) * 12,
+                y: (0.5 - lm2[WRIST].y) * 8,
+                z: lm2[WRIST].z * 8,
+              };
+            } else {
+              raw.handCount = 1;
+              raw.secondHandPos = null;
+            }
+            return raw;
+          }
+        }
+        return null;
+      }
+
+      // ── Main loop ───────────────────────
+      var lastTime = performance.now();
+
+      function animate(now) {
+        requestAnimationFrame(animate);
+        var dt = (now - lastTime) / 1000;
+        if (dt <= 0) dt = 0.016;
+        if (dt > 0.5) dt = 0.5;
+        lastTime = now;
+        time += dt;
+
+        var raw = null;
+        if (mode === 'mouse') {
+          raw = getMouseGesture();
+        } else if (latestHandResults) {
+          raw = processHandResults(latestHandResults);
+        }
+
+        smoothedGesture = smoothGesture(smoothedGesture, raw, dt);
+        if (!smoothedGesture) smoothedGesture = createDefaultGesture();
+
+        updateParticles(smoothedGesture, dt, time);
+
+        var g = smoothedGesture;
+        camera3d.position.x = lerp(camera3d.position.x, g.handPosition.x * 0.12, 0.02);
+        camera3d.position.y = lerp(camera3d.position.y, g.handPosition.y * 0.12, 0.02);
+        camera3d.lookAt(0, 0, 0);
+
+        updateHUD(g);
+        updateStatus();
+        renderer.render(scene, camera3d);
+      }
+
+      // ── Mode switch ─────────────────────
+      function switchMode(newMode) {
+        mode = newMode;
+        if (mode === 'mouse') {
+          modeBtn.textContent = '🖱 鼠标模式';
+          modeBtn.classList.add('active');
+        } else {
+          modeBtn.textContent = '📷 手势模式';
+          modeBtn.classList.add('active');
+        }
+      }
+
+      modeBtn.addEventListener('click', function() {
+        if (mode === 'mouse') {
+          switchMode('camera');
+          initCamera();
+        } else {
+          switchMode('mouse');
+          stopCamera();
+        }
+      });
+
+      var cameraLoop = null;
+      var cameraErrorMsg = null;
+
+      function initCamera() {
+        if (cameraLoading) return;
+        cameraLoading = true;
+        cameraErrorMsg = null;
+        updateStatus();
+        gestureNameEl.textContent = '📷 正在检测摄像头…';
+        gestureDetailEl.textContent = '';
+        gestureDetailEl.style.color = '';
+        gestureDetailEl.style.cursor = '';
+        gestureDetailEl.style.pointerEvents = 'none';
+        console.log('📷 initCamera 开始');
+
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          showCameraError('浏览器不支持摄像头 API');
+          return;
+        }
+
+        // Step 1: Get camera first
+        navigator.mediaDevices.getUserMedia({
+          video: { width: 640, height: 480, facingMode: 'user' }
+        }).then(function(stream) {
+          console.log('✅ 摄像头 OK');
+          videoEl.srcObject = stream;
+          videoEl.play();
+          gestureNameEl.textContent = '📷 摄像头已开启';
+          gestureDetailEl.textContent = '加载手势模型…';
+          // Step 2: Load scripts via tag injection (most reliable)
+          return loadMediaPipeScripts();
+        }).then(function() {
+          console.log('✅ MediaPipe 脚本加载完成');
+          gestureDetailEl.textContent = '初始化手势引擎…';
+          return startMediaPipeHands();
+        }).then(function() {
+          console.log('✅✅ 手势识别就绪！');
+          cameraReady = true;
+          cameraLoading = false;
+          cameraErrorMsg = null;
+          updateStatus();
+          gestureNameEl.textContent = '👋 等待手势…';
+          gestureDetailEl.textContent = '将手放入摄像头范围，试试各种手势！';
+          gestureDetailEl.style.color = '';
+        }).catch(function(err) {
+          console.error('❌ 失败:', err.message);
+          showCameraError(err.message);
+        });
+      }
+
+      function loadMediaPipeScripts() {
+        return new Promise(function(resolve, reject) {
+          if (typeof window.Hands !== 'undefined' && typeof window.Camera !== 'undefined') {
+            console.log('✅ MediaPipe 全局已存在');
+            resolve();
+            return;
+          }
+
+          var loaded = 0;
+          function onLoad() { loaded++; if (loaded === 2) resolve(); }
+
+          // Load from local node_modules (same as locateFile)
+          var s1 = document.createElement('script');
+          s1.src = 'node_modules/@mediapipe/camera_utils/camera_utils.js';
+          s1.onload = function() { console.log('✅ camera_utils 本地加载'); onLoad(); };
+          s1.onerror = function() { reject(new Error('camera_utils 加载失败')); };
+          document.head.appendChild(s1);
+
+          var s2 = document.createElement('script');
+          s2.src = 'node_modules/@mediapipe/hands/hands.js';
+          s2.onload = function() { console.log('✅ hands 本地加载'); onLoad(); };
+          s2.onerror = function() { reject(new Error('hands 加载失败')); };
+          document.head.appendChild(s2);
+        });
+      }
+
+      function startMediaPipeHands() {
+        return new Promise(function(resolve, reject) {
+          var HandsClass = window.Hands;
+          var CameraClass = window.Camera;
+          if (!HandsClass) { reject(new Error('Hands 不可用')); return; }
+          if (!CameraClass) { reject(new Error('Camera 不可用')); return; }
+
+          var hands = new HandsClass({
+            locateFile: function(file) {
+              return 'node_modules/@mediapipe/hands/' + file;
+            },
+          });
+          hands.setOptions({
+            maxNumHands: 2,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.65,
+            minTrackingConfidence: 0.45,
+          });
+
+          var started = false;
+          hands.onResults(function(results) {
+            latestHandResults = results;
+            if (!started) {
+              started = true;
+              console.log('✅ 收到第一个手势结果');
+              resolve();
+            }
+          });
+
+          cameraLoop = new CameraClass(videoEl, {
+            onFrame: function() {
+              hands.send({ image: videoEl }).catch(function(){});
+            },
+            width: 640, height: 480,
+          });
+
+          cameraLoop.start().then(function() {
+            console.log('✅ 摄像头循环已启动');
+          }).catch(function(e) {
+            if (!started) reject(e);
+          });
+
+          // Safety timeout
+          setTimeout(function() {
+            if (!started) {
+              started = true;
+              console.log('⚠️ 超时但摄像头正常，请将手放入画面');
+              resolve();
+            }
+          }, 15000);
+        });
+      }
+
+      function showCameraError(msg) {
+        cameraLoading = false;
+        cameraReady = false;
+        cameraErrorMsg = msg;
+        updateStatus();
+        gestureNameEl.textContent = '⚠️ 手势模式不可用';
+        gestureDetailEl.textContent = '【' + msg + '】— 点击此处重试';
+        gestureDetailEl.style.color = '#ff6b6b';
+        gestureDetailEl.style.cursor = 'pointer';
+        gestureDetailEl.style.pointerEvents = 'auto';
+        gestureDetailEl.onclick = function() {
+          gestureDetailEl.style.color = '';
+          gestureDetailEl.style.cursor = '';
+          gestureDetailEl.style.pointerEvents = 'none';
+          gestureDetailEl.onclick = null;
+          initCamera();
+        };
+        if (videoEl.srcObject) {
+          videoEl.srcObject.getTracks().forEach(function(t) { t.stop(); });
+          videoEl.srcObject = null;
+        }
+        if (cameraLoop) {
+          try { cameraLoop.stop(); } catch(e) {}
+          cameraLoop = null;
+        }
+        console.error('📷 错误详情: ' + msg);
+      }
+
+      function stopCamera() {
+        if (cameraLoop) {
+          try { cameraLoop.stop(); } catch(e) {}
+          cameraLoop = null;
+        }
+        if (videoEl.srcObject) {
+          videoEl.srcObject.getTracks().forEach(function(t) { t.stop(); });
+          videoEl.srcObject = null;
+        }
+        latestHandResults = null;
+        cameraReady = false;
+        updateStatus();
+      }
+
+      // ── Input events ────────────────────
+      window.addEventListener('mousemove', function(e) {
+        mouseState.x = (e.clientX / window.innerWidth) * 2 - 1;
+        mouseState.y = (e.clientY / window.innerHeight) * 2 - 1;
+      });
+      window.addEventListener('wheel', function(e) {
+        mouseState.wheel = clamp(mouseState.wheel - e.deltaY * 0.001, -3, 3);
+      });
+      window.addEventListener('mousedown', function(e) {
+        if (e.button === 0) mouseState.leftDown = true;
+        if (e.button === 2) mouseState.rightDown = true;
+      });
+      window.addEventListener('mouseup', function(e) {
+        if (e.button === 0) mouseState.leftDown = false;
+        if (e.button === 2) mouseState.rightDown = false;
+      });
+      window.addEventListener('contextmenu', function(e) { e.preventDefault(); });
+
+      // Touch
+      window.addEventListener('touchmove', function(e) {
+        if (e.touches.length > 0) {
+          mouseState.x = (e.touches[0].clientX / window.innerWidth) * 2 - 1;
+          mouseState.y = (e.touches[0].clientY / window.innerHeight) * 2 - 1;
+        }
+        if (e.touches.length >= 2) { mouseState.leftDown = true; mouseState.rightDown = true; }
+      }, { passive: true });
+      window.addEventListener('touchend', function() {
+        mouseState.leftDown = false; mouseState.rightDown = false;
+      });
+
+      // Help
+      helpBtn.addEventListener('click', function() {
+        helpPanel.classList.toggle('show');
+      });
+
+      // Keyboard
+      window.addEventListener('keydown', function(e) {
+        switch(e.key.toLowerCase()) {
+          case '1': switchMode('mouse'); stopCamera(); break;
+          case '2': switchMode('camera'); initCamera(); break;
+          case 'arrowleft':  mouseState.x = clamp(mouseState.x - 0.05, -1, 1); break;
+          case 'arrowright': mouseState.x = clamp(mouseState.x + 0.05, -1, 1); break;
+          case 'arrowup':    mouseState.y = clamp(mouseState.y - 0.05, -1, 1); break;
+          case 'arrowdown':  mouseState.y = clamp(mouseState.y + 0.05, -1, 1); break;
+          case 'a': mouseState.leftDown = true; break;
+          case 'f': mouseState.rightDown = true; break;
+        }
+      });
+      window.addEventListener('keyup', function(e) {
+        if (e.key === 'a') mouseState.leftDown = false;
+        if (e.key === 'f') mouseState.rightDown = false;
+      });
+
+      // Resize
+      window.addEventListener('resize', function() {
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        camera3d.aspect = window.innerWidth / window.innerHeight;
+        camera3d.updateProjectionMatrix();
+      });
+
+      // ── GO! ─────────────────────────────
+      gestureNameEl.textContent = '🖱 鼠标模式';
+      gestureDetailEl.textContent = '移动鼠标试试看！粒子会跟随你的鼠标移动';
+      statusDotEl.className = 'status-dot active';
+      statusTextEl.textContent = '就绪';
+
+      console.log('🚀 3D 手势粒子系统启动');
+      console.log('  Three.js: v' + THREE.REVISION);
+      console.log('  粒子数: ' + PARTICLE_COUNT);
+      console.log('  默认鼠标模式 - 移动鼠标即可看到效果');
+      requestAnimationFrame(animate);
+
+    }); // end waitForThree
+  </script>
+</body>
+</html>
