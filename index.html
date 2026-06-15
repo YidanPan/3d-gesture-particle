@@ -721,18 +721,35 @@
 
           // Load from local node_modules (same as locateFile)
           var s1 = document.createElement('script');
-          s1.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3/camera_utils.js';
+          s1.src = 'mediapipe/camera_utils/camera_utils.js';
           s1.onload = function() { console.log('✅ camera_utils 本地加载'); onLoad(); };
           s1.onerror = function() { reject(new Error('camera_utils 加载失败')); };
           document.head.appendChild(s1);
 
           var s2 = document.createElement('script');
-          s2.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/hands.js';
+          s2.src = 'mediapipe/hands/hands.js';
           s2.onload = function() { console.log('✅ hands 本地加载'); onLoad(); };
           s2.onerror = function() { reject(new Error('hands 加载失败')); };
           document.head.appendChild(s2);
         });
       }
+
+      // ── Global fetch interceptor for debugging ──
+      var _origFetch = window.fetch;
+      window.fetch = function(url, opts) {
+        var urlStr = typeof url === 'string' ? url : url.url;
+        return _origFetch.call(window, url, opts).then(function(r) {
+          if (urlStr.indexOf('mediapipe') !== -1) {
+            console.log('🌐 fetch ' + r.status + ' ' + (urlStr.length > 80 ? urlStr.slice(-60) : urlStr));
+          }
+          return r;
+        }).catch(function(e) {
+          if (urlStr.indexOf('mediapipe') !== -1) {
+            console.error('❌ fetch FAIL: ' + urlStr, e.message);
+          }
+          throw e;
+        });
+      };
 
       function startMediaPipeHands() {
         return new Promise(function(resolve, reject) {
@@ -744,7 +761,7 @@
           var hands = new HandsClass({
             locateFile: function(file) {
               locateFileCallCount++;
-              var url = 'https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/' + file;
+              var url = 'mediapipe/hands/' + file;
               console.log('📍 locateFile #' + locateFileCallCount + ':', file, '→', url);
               return url;
             },
