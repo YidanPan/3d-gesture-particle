@@ -753,10 +753,6 @@
 
       function startMediaPipeHands() {
         return new Promise(function(resolve, reject) {
-          // Fix Emscripten compatibility: Module.arguments → arguments_
-          if (typeof Module === 'undefined') window.Module = {};
-          if (!Module.arguments) Module.arguments = [];
-
           var HandsClass = window.Hands;
           var CameraClass = window.Camera;
           if (!HandsClass) { reject(new Error('Hands 不可用')); return; }
@@ -765,7 +761,9 @@
           var hands = new HandsClass({
             locateFile: function(file) {
               locateFileCallCount++;
-              var url = 'mediapipe/hands/' + file;
+              // Redirect SIMD → non-SIMD to avoid Module.arguments abort
+              var safeFile = file.replace('_simd_', '_');
+              var url = 'mediapipe/hands/' + safeFile;
               console.log('📍 locateFile #' + locateFileCallCount + ':', file, '→', url);
               return url;
             },
