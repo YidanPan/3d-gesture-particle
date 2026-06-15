@@ -753,34 +753,53 @@
 
       function startMediaPipeHands() {
         return new Promise(function(resolve, reject) {
-          // Fix Module.arguments Emscripten incompatibility:
-          // Set BOTH window.Module.arguments AND createMediapipeSolutionsWasm
-          // as non-configurable so the WASM code can't replace them with a
-          // throwing getter via legacyModuleProp.
-          var M = window.Module || (window.Module = {});
-          if (!Object.getOwnPropertyDescriptor(M, 'arguments')) {
-            Object.defineProperty(M, 'arguments', {
-              value: [], writable: true, configurable: false
-            });
-          }
-          // Also set on the named global that both SIMD and non-SIMD WASM JS check
-          if (!window.createMediapipeSolutionsWasm) {
-            window.createMediapipeSolutionsWasm = M;
-          }
-
           var HandsClass = window.Hands;
           var CameraClass = window.Camera;
           if (!HandsClass) { reject(new Error('Hands 不可用')); return; }
           if (!CameraClass) { reject(new Error('Camera 不可用')); return; }
 
-          var hands = new HandsClass({
-            locateFile: function(file) {
-              locateFileCallCount++;
-              var url = 'mediapipe/hands/' + file;
-              console.log('📍 locateFile #' + locateFileCallCount + ':', file, '→', url);
-              return url;
-            },
-          });
+          // Pre-patch SIMD WASM JS to remove Module.arguments abort trigger.
+          // We fetch the file, nuke the legacyModuleProp call, and return a
+          // Blob URL so the eval'd code never sets up the throwing getter.
+          var simdJsUrl = 'mediapipe/hands/hands_solution_simd_wasm_bin.js';
+          var wasmJsUrl = 'mediapipe/hands/hands_solution_wasm_bin.js';
+          var patchedUrls = {};
+
+          function patchAndStore(key, url) {
+            return fetch(url).then(function(r) { return r.text(); }).then(function(code) {
+              // Remove the entire legacyModuleProp function call that sets
+              // up the throwing getter on Module.arguments
+              var patched = code.replace(
+                /legacyModuleProp\("arguments"\s*,\s*"arguments_"\)/g,
+                '/* PATCHED: legacyModuleProp("arguments","arguments_") removed */'
+              );
+              var blob = new Blob([patched], { type: 'application/javascript' });
+              patchedUrls[key] = URL.createObjectURL(blob);
+              console.log('🩹 Patched ' + key + ' (' + (code.length - patched.length) + ' chars removed)');
+            });
+          }
+
+          Promise.all([
+            patchAndStore('simd', simdJsUrl),
+            patchAndStore('wasm', wasmJsUrl)
+          ]).then(function() {
+            var hands = new HandsClass({
+              locateFile: function(file) {
+                locateFileCallCount++;
+                // Use patched version for WASM JS files
+                if (file === 'hands_solution_simd_wasm_bin.js' && patchedUrls['simd']) {
+                  console.log('📍 locateFile #' + locateFileCallCount + ': ' + file + ' → [PATCHED blob]');
+                  return patchedUrls['simd'];
+                }
+                if (file === 'hands_solution_wasm_bin.js' && patchedUrls['wasm']) {
+                  console.log('📍 locateFile #' + locateFileCallCount + ': ' + file + ' → [PATCHED blob]');
+                  return patchedUrls['wasm'];
+                }
+                var url = 'mediapipe/hands/' + file;
+                console.log('📍 locateFile #' + locateFileCallCount + ':', file, '→', url);
+                return url;
+              },
+            });
           hands.setOptions({
             maxNumHands: 2,
             modelComplexity: 1,
