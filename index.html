@@ -542,6 +542,7 @@
       // ── HUD ─────────────────────────────
       var debugFrameCount = 0;
       var debugResultCount = 0;
+      var locateFileCallCount = 0;
 
       function updateHUD(g) {
         // Don't overwrite error messages
@@ -557,6 +558,8 @@
         if (g.handCount === 0) {
           gestureNameEl.textContent = '👋 等待手势…';
           gestureDetailEl.textContent = '帧:' + debugFrameCount + ' 检测:' + debugResultCount +
+            ' | locateFile调用:' + locateFileCallCount +
+            ' | crossIso:' + window.crossOriginIsolated +
             ' | 将手靠近摄像头 · 确保光线充足';
           return;
         }
@@ -740,8 +743,9 @@
 
           var hands = new HandsClass({
             locateFile: function(file) {
+              locateFileCallCount++;
               var url = '/mediapipe/hands/' + file;
-              console.log('📍 locateFile:', file, '→', url);
+              console.log('📍 locateFile #' + locateFileCallCount + ':', file, '→', url);
               return url;
             },
           });
@@ -908,13 +912,13 @@
       console.log('  SharedArrayBuffer:', typeof SharedArrayBuffer !== 'undefined');
       console.log('  默认鼠标模式 - 移动鼠标即可看到效果');
 
-      // Show diagnostic on page if crossOriginIsolated is false
+      // Diagnostic: check critical conditions
+      console.log('crossOriginIsolated:', window.crossOriginIsolated);
+      console.log('SharedArrayBuffer:', typeof SharedArrayBuffer !== 'undefined');
       if (!window.crossOriginIsolated) {
         var diag = document.getElementById('debug-info');
         diag.style.display = 'block';
-        diag.innerHTML = '⚠️ <b>crossOriginIsolated: ' + window.crossOriginIsolated + '</b><br>' +
-          'SharedArrayBuffer 不可用，WASM 无法初始化<br>' +
-          '<span style="font-size:11px;color:#999;">可能原因：CDN资源(Three.js)缺少CORP响应头</span>';
+        diag.innerHTML = '⚠️ <b>crossOriginIsolated: FALSE</b><br>SharedArrayBuffer不可用，WASM无法启动';
       }
 
       requestAnimationFrame(animate);
