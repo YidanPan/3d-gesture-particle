@@ -114,7 +114,7 @@
 <body>
 
   <!-- Debug (shown if Three.js fails) -->
-  <div id="debug-info"></div>
+  <div id="debug-info" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);color:#fff;font-size:13px;z-index:999;text-align:center;pointer-events:none;background:rgba(0,0,0,0.8);padding:16px;border-radius:8px;max-width:90vw;word-break:break-all;display:none;"></div>
 
   <!-- HUD -->
   <div id="hud">
@@ -904,7 +904,19 @@
       console.log('🚀 3D 手势粒子系统启动');
       console.log('  Three.js: v' + THREE.REVISION);
       console.log('  粒子数: ' + PARTICLE_COUNT);
+      console.log('  crossOriginIsolated:', window.crossOriginIsolated);
+      console.log('  SharedArrayBuffer:', typeof SharedArrayBuffer !== 'undefined');
       console.log('  默认鼠标模式 - 移动鼠标即可看到效果');
+
+      // Show diagnostic on page if crossOriginIsolated is false
+      if (!window.crossOriginIsolated) {
+        var diag = document.getElementById('debug-info');
+        diag.style.display = 'block';
+        diag.innerHTML = '⚠️ <b>crossOriginIsolated: ' + window.crossOriginIsolated + '</b><br>' +
+          'SharedArrayBuffer 不可用，WASM 无法初始化<br>' +
+          '<span style="font-size:11px;color:#999;">可能原因：CDN资源(Three.js)缺少CORP响应头</span>';
+      }
+
       requestAnimationFrame(animate);
 
     }); // end waitForThree
