@@ -724,13 +724,13 @@
 
           // Load from local node_modules (same as locateFile)
           var s1 = document.createElement('script');
-          s1.src = 'node_modules/@mediapipe/camera_utils/camera_utils.js';
+          s1.src = 'mediapipe/camera_utils/camera_utils.js';
           s1.onload = function() { console.log('✅ camera_utils 本地加载'); onLoad(); };
           s1.onerror = function() { reject(new Error('camera_utils 加载失败')); };
           document.head.appendChild(s1);
 
           var s2 = document.createElement('script');
-          s2.src = 'node_modules/@mediapipe/hands/hands.js';
+          s2.src = 'mediapipe/hands/hands.js';
           s2.onload = function() { console.log('✅ hands 本地加载'); onLoad(); };
           s2.onerror = function() { reject(new Error('hands 加载失败')); };
           document.head.appendChild(s2);
@@ -746,7 +746,7 @@
 
           var hands = new HandsClass({
             locateFile: function(file) {
-              return 'node_modules/@mediapipe/hands/' + file;
+              return 'mediapipe/hands/' + file;
             },
           });
           hands.setOptions({
