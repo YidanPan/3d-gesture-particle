@@ -681,19 +681,10 @@
           return;
         }
 
-        // Step 1: Get camera first
-        navigator.mediaDevices.getUserMedia({
-          video: { width: 640, height: 480, facingMode: 'user' }
-        }).then(function(stream) {
-          console.log('✅ 摄像头 OK');
-          videoEl.srcObject = stream;
-          videoEl.play();
-          gestureNameEl.textContent = '📷 摄像头已开启';
-          gestureDetailEl.textContent = '加载手势模型…';
-          // Step 2: Load scripts via tag injection (most reliable)
-          return loadMediaPipeScripts();
-        }).then(function() {
+        // Step 1: Load scripts first, then let Camera handle the stream
+        loadMediaPipeScripts().then(function() {
           console.log('✅ MediaPipe 脚本加载完成');
+          gestureNameEl.textContent = '📷 正在启动摄像头…';
           gestureDetailEl.textContent = '初始化手势引擎…';
           return startMediaPipeHands();
         }).then(function() {
@@ -706,8 +697,11 @@
           gestureDetailEl.textContent = '将手放入摄像头范围，试试各种手势！';
           gestureDetailEl.style.color = '';
         }).catch(function(err) {
-          console.error('❌ 失败:', err.message);
-          showCameraError(err.message);
+          console.error('❌ initCamera 失败:', err);
+          console.error('  错误类型:', err.name);
+          console.error('  错误消息:', err.message);
+          console.error('  堆栈:', err.stack);
+          showCameraError(err.message || String(err));
         });
       }
 
