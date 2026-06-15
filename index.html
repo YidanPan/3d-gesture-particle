@@ -753,6 +753,24 @@
 
       function startMediaPipeHands() {
         return new Promise(function(resolve, reject) {
+          // Pre-patch: fix Module.arguments incompatibility in SIMD WASM JS
+          // by intercepting Object.defineProperty before the WASM code runs
+          var _origDefineProp = Object.defineProperty;
+          var _patchedModule = window.Module || (window.Module = {});
+          Object.defineProperty = function(obj, prop, desc) {
+            if (obj === _patchedModule && prop === 'arguments' &&
+                desc.get && desc.get.toString().indexOf('Module.arguments') > -1) {
+              console.log('🛡️ Blocked Module.arguments throwing getter, using safe version');
+              // Replace with safe getter
+              return _origDefineProp.call(Object, obj, prop, {
+                get: function() { return []; },
+                set: desc.set || function() {},
+                configurable: false
+              });
+            }
+            return _origDefineProp.apply(this, arguments);
+          };
+
           var HandsClass = window.Hands;
           var CameraClass = window.Camera;
           if (!HandsClass) { reject(new Error('Hands 不可用')); return; }
@@ -761,9 +779,7 @@
           var hands = new HandsClass({
             locateFile: function(file) {
               locateFileCallCount++;
-              // Redirect SIMD → non-SIMD to avoid Module.arguments abort
-              var safeFile = file.replace('_simd_', '_');
-              var url = 'mediapipe/hands/' + safeFile;
+              var url = 'mediapipe/hands/' + file;
               console.log('📍 locateFile #' + locateFileCallCount + ':', file, '→', url);
               return url;
             },
